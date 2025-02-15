@@ -1,0 +1,90 @@
+blueprint:
+  name: Motion Controlled Light (On/Off)
+  description: >
+    Turns on a light when motion is detected (if the light is off, ambient lux is low, and night mode is off)
+    and turns it off after no motion for a specified delay.
+  domain: automation
+  input:
+    motion_sensor:
+      name: Motion Sensor
+      description: The motion sensor that triggers the automation.
+      selector:
+        entity:
+          domain: binary_sensor
+    light_target:
+      name: Light
+      description: The light to control.
+      selector:
+        target:
+          entity:
+            domain: light
+    ambient_lux_sensor:
+      name: Ambient Lux Sensor
+      description: Sensor that provides the ambient lux reading.
+      selector:
+        entity:
+          domain: sensor
+    lux_threshold:
+      name: Lux Threshold
+      description: The maximum lux value considered "dark".
+      default: 10
+      selector:
+        number:
+          min: 0
+          max: 1000
+    night_mode_input:
+      name: Night Mode Toggle
+      description: >
+        A toggle (input_boolean) that, when enabled, indicates it is night mode and prevents the light from turning on.
+      selector:
+        entity:
+          domain: input_boolean
+    off_delay:
+      name: Off Delay
+      description: Time to wait after no motion before turning off the light.
+      default: "00:05:00"
+      selector:
+        time: {}
+      
+trigger:
+  # Trigger when motion is detected (sensor goes from off to on)
+  - platform: state
+    entity_id: !input motion_sensor
+    from: "off"
+    to: "on"
+  # Trigger when motion stops (sensor goes from on to off) and remains off for the specified delay
+  - platform: state
+    entity_id: !input motion_sensor
+    from: "on"
+    to: "off"
+    for: !input off_delay
+
+action:
+  - choose:
+      # Choice to turn the light ON when motion is detected
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.to_state.state == 'on' }}"
+          - condition: state
+            entity_id: !input light_target
+            state: "off"
+          - condition: numeric_state
+            entity_id: !input ambient_lux_sensor
+            below: !input lux_threshold
+          - condition: state
+            entity_id: !input night_mode_input
+            state: "off"
+        sequence:
+          - service: light.turn_on
+            target: !input light_target
+      # Choice to turn the light OFF when no motion is detected for the delay period
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.to_state.state == 'off' }}"
+          - condition: state
+            entity_id: !input light_target
+            state: "on"
+        sequence:
+          - service: light.turn_off
+            target: !input light_target
+mode: restart
